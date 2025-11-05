@@ -1,0 +1,19 @@
+# Python Virtual Environment
+.venv/*
+
+# Databases
+*.sqlite*
+
+# Misc
+.idea
+.DS_Store
+
+# Migrations
+*/migrations
+!*/migrations/0001_initial.py
+
+# Cached files
+*/_pycache_
+
+# Python init files
+*/_init_.py
