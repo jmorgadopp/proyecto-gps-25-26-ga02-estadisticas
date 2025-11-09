@@ -54,6 +54,16 @@ DATABASES = {
     }
 }
 
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+        # Si tenéis SimpleJWT instalado, podéis añadir:
+        # "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+}
+
+
 AUTH_PASSWORD_VALIDATORS = []
 
 LANGUAGE_CODE = "es-es"

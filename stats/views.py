@@ -1,10 +1,14 @@
+# stats/views.py
 from django.utils.dateparse import parse_datetime
-from django.db.models import Sum, Count, Case, When, IntegerField
+from django.db.models import Sum, Count, Case, When, IntegerField, Avg
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-# Capa de compatibilidad: usamos utils si existe; si no, caemos al modelo local.
+# Permiso de acceso para discográfica/admin
+from .permissions import IsDiscografica
+
+# Capa de compatibilidad: usa utils si existe; si no, cae a los modelos locales
 try:
     from .utils import get_playback_model, get_album_sale_model, get_rating_model
 except Exception:
@@ -20,8 +24,10 @@ except Exception:
 TRUTHY = {"1", "true", "yes", "y", "t"}
 FALSY  = {"0", "false", "no", "n", "f"}
 
+
 def has_field(model, name: str) -> bool:
     return model is not None and any(f.name == name for f in model._meta.get_fields())
+
 
 # ----------------- ENDPOINTS -----------------
 
@@ -32,16 +38,20 @@ def plays_by_song(request, song_id: str):
     qs = Playback.objects.filter(song_id=song_id)
 
     v = (request.query_params.get("valid") or "").lower()
-    if v in TRUTHY: qs = qs.filter(valid=True)
-    elif v in FALSY: qs = qs.filter(valid=False)
+    if v in TRUTHY:
+        qs = qs.filter(valid=True)
+    elif v in FALSY:
+        qs = qs.filter(valid=False)
 
     f = request.query_params.get("from"); t = request.query_params.get("to")
     if f:
         dt = parse_datetime(f)
-        if dt: qs = qs.filter(played_at__gte=dt)
+        if dt:
+            qs = qs.filter(played_at__gte=dt)
     if t:
         dt = parse_datetime(t)
-        if dt: qs = qs.filter(played_at__lte=dt)
+        if dt:
+            qs = qs.filter(played_at__lte=dt)
 
     return Response({"song_id": song_id, "plays": qs.count()})
 
@@ -58,10 +68,12 @@ def sales_by_album(request, album_id: str):
     f = request.query_params.get("from"); t = request.query_params.get("to")
     if f:
         dt = parse_datetime(f)
-        if dt: qs = qs.filter(purchased_at__gte=dt)
+        if dt:
+            qs = qs.filter(purchased_at__gte=dt)
     if t:
         dt = parse_datetime(t)
-        if dt: qs = qs.filter(purchased_at__lte=dt)
+        if dt:
+            qs = qs.filter(purchased_at__lte=dt)
 
     orders = qs.count()
     units  = qs.aggregate(total=Sum("units"))["total"] or 0
@@ -75,8 +87,19 @@ def sales_by_album(request, album_id: str):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsDiscografica])  # <- PROTEGIDO por rol (discográfica/admin/staff)
 def global_stats(request):
+    """
+    GET /api/v1/stats/global
+    Parámetros opcionales:
+      - from, to            : ISO8601
+      - valid               : true|false
+      - include_refunds     : true|false (por defecto false)
+      - revenue             : true (incluye suma de ingresos)
+      - group_by            : artist (si existe artist_id en modelos)
+      - label_id            : <id> (si existe label_id en modelos)
+      - artists             : a1,a2 (lista CSV; alternativa a label_id)
+    """
     Playback  = get_playback_model()
     AlbumSale = get_album_sale_model()
     Rating    = get_rating_model()
@@ -85,42 +108,65 @@ def global_stats(request):
     sales_qs = AlbumSale.objects.all()
     rate_qs  = Rating.objects.all() if Rating is not None else None
 
-    # filtros tiempo
+    # Filtros por discográfica / artistas si los modelos exponen esos campos
+    label_id = request.query_params.get("label_id")
+    if label_id:
+        if has_field(Playback, "label_id"):
+            plays_qs = plays_qs.filter(label_id=label_id)
+        if has_field(AlbumSale, "label_id"):
+            sales_qs = sales_qs.filter(label_id=label_id)
+        if rate_qs is not None and has_field(Rating, "label_id"):
+            rate_qs = rate_qs.filter(label_id=label_id)
+
+    artists_csv = request.query_params.get("artists")
+    if artists_csv:
+        ids = [a.strip() for a in artists_csv.split(",") if a.strip()]
+        if has_field(Playback, "artist_id"):
+            plays_qs = plays_qs.filter(artist_id__in=ids)
+        if has_field(AlbumSale, "artist_id"):
+            sales_qs = sales_qs.filter(artist_id__in=ids)
+        if rate_qs is not None and has_field(Rating, "artist_id"):
+            rate_qs = rate_qs.filter(artist_id__in=ids)
+
+    # Filtros de tiempo
     f = request.query_params.get("from"); t = request.query_params.get("to")
     if f:
         dt = parse_datetime(f)
         if dt:
             plays_qs = plays_qs.filter(played_at__gte=dt)
             sales_qs = sales_qs.filter(purchased_at__gte=dt)
-            if rate_qs is not None: rate_qs = rate_qs.filter(rated_at__gte=dt)
+            if rate_qs is not None:
+                rate_qs = rate_qs.filter(rated_at__gte=dt)
     if t:
         dt = parse_datetime(t)
         if dt:
             plays_qs = plays_qs.filter(played_at__lte=dt)
             sales_qs = sales_qs.filter(purchased_at__lte=dt)
-            if rate_qs is not None: rate_qs = rate_qs.filter(rated_at__lte=dt)
+            if rate_qs is not None:
+                rate_qs = rate_qs.filter(rated_at__lte=dt)
 
-    # plays válidas opcional
+    # Plays válidas opcional
     v = (request.query_params.get("valid") or "").lower()
-    if v in TRUTHY: plays_qs = plays_qs.filter(valid=True)
-    elif v in FALSY: plays_qs = plays_qs.filter(valid=False)
+    if v in TRUTHY:
+        plays_qs = plays_qs.filter(valid=True)
+    elif v in FALSY:
+        plays_qs = plays_qs.filter(valid=False)
 
     plays_total = plays_qs.count()
     plays_valid = Playback.objects.filter(pk__in=plays_qs.values("pk"), valid=True).count()
 
-    # ventas (refunds)
+    # Ventas (sin reembolsos por defecto)
     if (request.query_params.get("include_refunds") or "").lower() not in TRUTHY:
         sales_qs = sales_qs.filter(refunded=False)
     orders = sales_qs.count()
     units  = sales_qs.aggregate(total=Sum("units"))["total"] or 0
 
-    # valoraciones (si existe el modelo)
+    # Valoraciones (si existe el modelo)
     ratings_count = 0
-    ratings_avg = None
+    ratings_avg   = None
     if rate_qs is not None:
-        from django.db.models import Avg
         ratings_count = rate_qs.count()
-        ratings_avg = rate_qs.aggregate(avg=Avg("stars"))["avg"]
+        ratings_avg   = rate_qs.aggregate(avg=Avg("stars"))["avg"]
 
     resp = {
         "timeframe": {"from": f, "to": t},
@@ -133,7 +179,7 @@ def global_stats(request):
         revenue = sales_qs.aggregate(total=Sum("amount"))["total"] or 0
         resp["sales"]["revenue"] = str(revenue)
 
-    # agrupación por artista (solo si los modelos tienen artist_id)
+    # Agrupación por artista (si los modelos exponen artist_id)
     if (request.query_params.get("group_by") or "").lower() == "artist" and has_field(Playback, "artist_id"):
         by_artist = {}
 
@@ -167,7 +213,6 @@ def global_stats(request):
                 cur["revenue"]      = str(row["revenue"] or 0)
 
         if rate_qs is not None and has_field(get_rating_model(), "artist_id"):
-            from django.db.models import Avg
             agg_r = rate_qs.values("artist_id").annotate(
                 ratings_count=Count("id"),
                 ratings_average=Avg("stars"),
