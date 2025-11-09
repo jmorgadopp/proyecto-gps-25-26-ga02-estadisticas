@@ -1,3 +1,4 @@
 from django.contrib import admin
-
-# Register your models here.
+from .models import Playback, AlbumSale
+admin.site.register(Playback)
+admin.site.register(AlbumSale)
