@@ -10,3 +10,6 @@ def get_playback_model():
 
 def get_album_sale_model():
     return _get_model("STATS_ALBUM_SALE_MODEL", "stats.AlbumSale")
+
+def get_rating_model():
+    return _get_model("STATS_RATING_MODEL", "stats.Rating")

@@ -21,3 +21,13 @@ class AlbumSale(models.Model):
     class Meta:
         indexes = [models.Index(fields=["album_id", "purchased_at"])]
         ordering = ["-purchased_at"]
+class Rating(models.Model):
+    # Valoración de una canción (1–5). artist_id es opcional para facilitar agregados.
+    song_id   = models.CharField(max_length=64, db_index=True)
+    artist_id = models.CharField(max_length=64, db_index=True, blank=True, null=True)
+    stars     = models.PositiveSmallIntegerField()  # 1-5
+    rated_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["song_id", "artist_id", "rated_at"])]
+        ordering = ["-rated_at"]
