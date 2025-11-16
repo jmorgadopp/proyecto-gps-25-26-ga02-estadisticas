@@ -14,10 +14,8 @@ from .permissions import IsDiscografica
 
 # ---------- Compatibilidad para obtener modelos ----------
 try:
-    # Si tienes utils con getters configurables
     from .utils import get_playback_model, get_album_sale_model, get_rating_model
 except Exception:
-    # Fallback a modelos locales
     from .models import Playback as _Playback, AlbumSale as _AlbumSale
     try:
         from .models import Rating as _Rating
@@ -42,86 +40,63 @@ def has_field(model, name: str) -> bool:
     return model is not None and any(f.name == name for f in model._meta.get_fields())
 
 
-# ---------------------------------------------------------------------
-# PLAYS POR CANCIÓN
-# GET  -> devuelve el recuento
-# POST -> inserta 1..N reproducciones y devuelve el nuevo total
-#        (útil para probar el botón ▶ +1 del frontend)
-# ---------------------------------------------------------------------
-@api_view(["GET", "POST"])
-@permission_classes([AllowAny])
+@api_view(["GET", "POST", "DELETE"])
+@permission_classes([AllowAny])  # en DEBUG permitimos pruebas sin auth
 def plays_by_song(request, song_id: str):
+    """
+    GET     -> devuelve {"song_id":..., "plays": N} con filtros opcionales.
+    POST    -> inserta 1 reproducción para song_id y devuelve el nuevo total.
+    DELETE  -> elimina la reproducción más reciente (si existe) y devuelve el nuevo total.
+    """
     Playback = get_playback_model()
 
     if request.method == "POST":
-        # Número de reproducciones a añadir (por defecto 1)
-        try:
-            count = int(request.data.get("count", 1))
-            if count < 1:
-                raise ValueError
-        except Exception:
-            return Response(
-                {"detail": "El campo 'count' debe ser un entero >= 1."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Campos opcionales que soportamos si existen en el modelo
-        valid_param = (str(request.data.get("valid", "true")) or "").lower()
-        valid_value = True if valid_param in TRUTHY else False if valid_param in FALSY else True
-
-        played_at_raw = request.data.get("played_at")
-        played_at_value = parse_datetime(played_at_raw) if played_at_raw else None
-        if played_at_value is None:
-            played_at_value = timezone.now()
-
-        artist_id_value = request.data.get("artist_id")
-        label_id_value = request.data.get("label_id")
-
-        # Construimos kwargs respetando sólo los campos existentes
-        base_kwargs = {"song_id": str(song_id)}
-        if has_field(Playback, "valid"):
-            base_kwargs["valid"] = valid_value
-        if has_field(Playback, "played_at"):
-            base_kwargs["played_at"] = played_at_value
-        if artist_id_value and has_field(Playback, "artist_id"):
-            base_kwargs["artist_id"] = artist_id_value
-        if label_id_value and has_field(Playback, "label_id"):
-            base_kwargs["label_id"] = label_id_value
-
-        # Inserción (bulk si count>1)
-        if count == 1:
-            Playback.objects.create(**base_kwargs)
-        else:
-            Playback.objects.bulk_create([Playback(**base_kwargs) for _ in range(count)])
-
-        # Nuevo total tras insertar
-        new_total = Playback.objects.filter(song_id=str(song_id)).count()
-        return Response(
-            {"ok": True, "song_id": str(song_id), "added": count, "total": new_total},
-            status=status.HTTP_201_CREATED,
+        # Crear una reproducción "válida" ahora
+        obj = Playback.objects.create(
+            song_id=song_id,
+            valid=True if has_field(Playback, "valid") else True,
+            played_at=timezone.now() if has_field(Playback, "played_at") else None,
         )
+        # Si algún campo no existe, create() lo ignorará si no se pasa
+        total = Playback.objects.filter(song_id=song_id).count()
+        return Response({"song_id": song_id, "plays": total, "changed": +1}, status=201)
 
-    # --- GET: filtros y recuento ---
-    qs = Playback.objects.filter(song_id=str(song_id))
+    if request.method == "DELETE":
+        # Eliminar la más reciente si tenemos timestamp, si no por id
+        qs = Playback.objects.filter(song_id=song_id)
+        if has_field(Playback, "played_at"):
+            qs = qs.order_by("-played_at")
+        else:
+            qs = qs.order_by("-id")
+        last = qs.first()
+        if last:
+            last.delete()
+        total = Playback.objects.filter(song_id=song_id).count()
+        return Response({"song_id": song_id, "plays": total, "changed": -1})
+
+    # --- GET ---
+    qs = Playback.objects.filter(song_id=song_id)
 
     v = (request.query_params.get("valid") or "").lower()
     if v in TRUTHY:
-        qs = qs.filter(valid=True)
+        if has_field(Playback, "valid"):
+            qs = qs.filter(valid=True)
     elif v in FALSY:
-        qs = qs.filter(valid=False)
+        if has_field(Playback, "valid"):
+            qs = qs.filter(valid=False)
 
     f = request.query_params.get("from")
     t = request.query_params.get("to")
     if f:
         dt = parse_datetime(f)
-        if dt:
+        if dt and has_field(Playback, "played_at"):
             qs = qs.filter(played_at__gte=dt)
     if t:
         dt = parse_datetime(t)
-        if dt:
+        if dt and has_field(Playback, "played_at"):
             qs = qs.filter(played_at__lte=dt)
 
-    return Response({"song_id": str(song_id), "plays": qs.count()})
+    return Response({"song_id": song_id, "plays": qs.count()})
 
 
 @api_view(["GET"])
@@ -131,24 +106,25 @@ def sales_by_album(request, album_id: str):
     qs = AlbumSale.objects.filter(album_id=album_id)
 
     if (request.query_params.get("include_refunds") or "").lower() not in TRUTHY:
-        qs = qs.filter(refunded=False)
+        if has_field(AlbumSale, "refunded"):
+            qs = qs.filter(refunded=False)
 
     f = request.query_params.get("from")
     t = request.query_params.get("to")
     if f:
         dt = parse_datetime(f)
-        if dt:
+        if dt and has_field(AlbumSale, "purchased_at"):
             qs = qs.filter(purchased_at__gte=dt)
     if t:
         dt = parse_datetime(t)
-        if dt:
+        if dt and has_field(AlbumSale, "purchased_at"):
             qs = qs.filter(purchased_at__lte=dt)
 
     orders = qs.count()
     units = qs.aggregate(total=Sum("units"))["total"] or 0
     resp = {"album_id": album_id, "orders": orders, "sales": units}
 
-    if (request.query_params.get("revenue") or "").lower() in TRUTHY:
+    if (request.query_params.get("revenue") or "").lower() in TRUTHY and has_field(AlbumSale, "amount"):
         revenue = qs.aggregate(total=Sum("amount"))["total"] or 0
         resp["revenue"] = str(revenue)
 
@@ -166,7 +142,6 @@ def global_stats(request):
     sales_qs = AlbumSale.objects.all()
     rate_qs = Rating.objects.all() if Rating is not None else None
 
-    # Filtros por label / artistas si los campos existen
     label_id = request.query_params.get("label_id")
     if label_id:
         if has_field(Playback, "label_id"):
@@ -186,41 +161,41 @@ def global_stats(request):
         if rate_qs is not None and has_field(Rating, "artist_id"):
             rate_qs = rate_qs.filter(artist_id__in=ids)
 
-    # Ventanas temporales
     f = request.query_params.get("from")
     t = request.query_params.get("to")
     if f:
         dt = parse_datetime(f)
         if dt:
-            plays_qs = plays_qs.filter(played_at__gte=dt)
-            sales_qs = sales_qs.filter(purchased_at__gte=dt)
-            if rate_qs is not None:
+            if has_field(Playback, "played_at"):
+                plays_qs = plays_qs.filter(played_at__gte=dt)
+            if has_field(AlbumSale, "purchased_at"):
+                sales_qs = sales_qs.filter(purchased_at__gte=dt)
+            if rate_qs is not None and has_field(Rating, "rated_at"):
                 rate_qs = rate_qs.filter(rated_at__gte=dt)
     if t:
         dt = parse_datetime(t)
         if dt:
-            plays_qs = plays_qs.filter(played_at__lte=dt)
-            sales_qs = sales_qs.filter(purchased_at__lte=dt)
-            if rate_qs is not None:
+            if has_field(Playback, "played_at"):
+                plays_qs = plays_qs.filter(played_at__lte=dt)
+            if has_field(AlbumSale, "purchased_at"):
+                sales_qs = sales_qs.filter(purchased_at__lte=dt)
+            if rate_qs is not None and has_field(Rating, "rated_at"):
                 rate_qs = rate_qs.filter(rated_at__lte=dt)
 
-    # Plays válidas opcional
     v = (request.query_params.get("valid") or "").lower()
-    if v in TRUTHY:
+    if v in TRUTHY and has_field(Playback, "valid"):
         plays_qs = plays_qs.filter(valid=True)
-    elif v in FALSY:
+    elif v in FALSY and has_field(Playback, "valid"):
         plays_qs = plays_qs.filter(valid=False)
 
     plays_total = plays_qs.count()
-    plays_valid = Playback.objects.filter(pk__in=plays_qs.values("pk"), valid=True).count()
+    plays_valid = Playback.objects.filter(pk__in=plays_qs.values("pk"), **({"valid": True} if has_field(Playback, "valid") else {})).count()
 
-    # Ventas (sin refund por defecto)
-    if (request.query_params.get("include_refunds") or "").lower() not in TRUTHY:
+    if (request.query_params.get("include_refunds") or "").lower() not in TRUTHY and has_field(get_album_sale_model(), "refunded"):
         sales_qs = sales_qs.filter(refunded=False)
     orders = sales_qs.count()
     units = sales_qs.aggregate(total=Sum("units"))["total"] or 0
 
-    # Ratings
     ratings_count = 0
     ratings_avg = None
     if rate_qs is not None:
@@ -237,23 +212,22 @@ def global_stats(request):
         },
     }
 
-    if (request.query_params.get("revenue") or "").lower() in TRUTHY:
+    if (request.query_params.get("revenue") or "").lower() in TRUTHY and has_field(get_album_sale_model(), "amount"):
         revenue = sales_qs.aggregate(total=Sum("amount"))["total"] or 0
         resp["sales"]["revenue"] = str(revenue)
 
-    # Agrupación por artista (si existe el campo)
     if (request.query_params.get("group_by") or "").lower() == "artist" and has_field(Playback, "artist_id"):
         by_artist = {}
 
         agg_p = plays_qs.values("artist_id").annotate(
             plays_total=Count("id"),
-            plays_valid=Sum(Case(When(valid=True, then=1), default=0, output_field=IntegerField())),
+            plays_valid=Sum(Case(When(valid=True, then=1), default=0, output_field=IntegerField())) if has_field(Playback, "valid") else Count("id"),
         )
         for row in agg_p:
             by_artist[row["artist_id"]] = {
                 "artist_id": row["artist_id"],
                 "plays_total": row["plays_total"],
-                "plays_valid": row["plays_valid"],
+                "plays_valid": row.get("plays_valid", row["plays_total"]),
                 "sales_orders": 0,
                 "sales_units": 0,
                 "revenue": None,
@@ -261,11 +235,12 @@ def global_stats(request):
                 "ratings_average": None,
             }
 
+        AlbumSale = get_album_sale_model()
         if has_field(AlbumSale, "artist_id"):
             agg_s = sales_qs.values("artist_id").annotate(
                 sales_orders=Count("id"),
                 sales_units=Sum("units"),
-                revenue=Sum("amount"),
+                revenue=Sum("amount") if has_field(AlbumSale, "amount") else None,
             )
             for row in agg_s:
                 cur = by_artist.setdefault(
@@ -283,7 +258,7 @@ def global_stats(request):
                 )
                 cur["sales_orders"] = row["sales_orders"] or 0
                 cur["sales_units"] = row["sales_units"] or 0
-                cur["revenue"] = str(row["revenue"] or 0)
+                cur["revenue"] = str(row.get("revenue") or 0) if "revenue" in row else None
 
         rating_model = get_rating_model()
         if rate_qs is not None and has_field(rating_model, "artist_id"):
@@ -334,7 +309,6 @@ def rating_for_song(request, song_id: str):
             data["user_rating"] = getattr(mine, "stars", None)
         return Response(data)
 
-    # Autenticación: en DEBUG aceptamos cabecera X-Dev-User
     if (not getattr(request, "user", None) or not request.user.is_authenticated) and settings.DEBUG:
         dev_user = request.headers.get("X-Dev-User") or request.META.get("HTTP_X_DEV_USER")
         if dev_user:
@@ -374,7 +348,7 @@ def rating_for_song(request, song_id: str):
         "song_id": song_id,
         "stars": obj.stars,
         "comment": obj.comment,
-        "rated_at": obj.rated_at,
+        "rated_at": getattr(obj, "rated_at", None),
         "created": created,
     }
     return Response(payload, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
