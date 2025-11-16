@@ -2,6 +2,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.dateparse import parse_datetime
+from django.utils import timezone
 from django.db.models import Sum, Count, Case, When, IntegerField, Avg
 
 from rest_framework import status
@@ -41,11 +42,67 @@ def has_field(model, name: str) -> bool:
     return model is not None and any(f.name == name for f in model._meta.get_fields())
 
 
-@api_view(["GET"])
+# ---------------------------------------------------------------------
+# PLAYS POR CANCIÓN
+# GET  -> devuelve el recuento
+# POST -> inserta 1..N reproducciones y devuelve el nuevo total
+#        (útil para probar el botón ▶ +1 del frontend)
+# ---------------------------------------------------------------------
+@api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def plays_by_song(request, song_id: str):
     Playback = get_playback_model()
-    qs = Playback.objects.filter(song_id=song_id)
+
+    if request.method == "POST":
+        # Número de reproducciones a añadir (por defecto 1)
+        try:
+            count = int(request.data.get("count", 1))
+            if count < 1:
+                raise ValueError
+        except Exception:
+            return Response(
+                {"detail": "El campo 'count' debe ser un entero >= 1."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Campos opcionales que soportamos si existen en el modelo
+        valid_param = (str(request.data.get("valid", "true")) or "").lower()
+        valid_value = True if valid_param in TRUTHY else False if valid_param in FALSY else True
+
+        played_at_raw = request.data.get("played_at")
+        played_at_value = parse_datetime(played_at_raw) if played_at_raw else None
+        if played_at_value is None:
+            played_at_value = timezone.now()
+
+        artist_id_value = request.data.get("artist_id")
+        label_id_value = request.data.get("label_id")
+
+        # Construimos kwargs respetando sólo los campos existentes
+        base_kwargs = {"song_id": str(song_id)}
+        if has_field(Playback, "valid"):
+            base_kwargs["valid"] = valid_value
+        if has_field(Playback, "played_at"):
+            base_kwargs["played_at"] = played_at_value
+        if artist_id_value and has_field(Playback, "artist_id"):
+            base_kwargs["artist_id"] = artist_id_value
+        if label_id_value and has_field(Playback, "label_id"):
+            base_kwargs["label_id"] = label_id_value
+
+        # Inserción (bulk si count>1)
+        if count == 1:
+            Playback.objects.create(**base_kwargs)
+        else:
+            Playback.objects.bulk_create([Playback(**base_kwargs) for _ in range(count)])
+
+        # Nuevo total tras insertar
+        new_total = Playback.objects.filter(song_id=str(song_id)).count()
+        return Response(
+            {"ok": True, "song_id": str(song_id), "added": count, "total": new_total},
+            status=status.HTTP_201_CREATED,
+        )
+
+    # --- GET: filtros y recuento ---
+    qs = Playback.objects.filter(song_id=str(song_id))
 
     v = (request.query_params.get("valid") or "").lower()
     if v in TRUTHY:
@@ -64,7 +121,7 @@ def plays_by_song(request, song_id: str):
         if dt:
             qs = qs.filter(played_at__lte=dt)
 
-    return Response({"song_id": song_id, "plays": qs.count()})
+    return Response({"song_id": str(song_id), "plays": qs.count()})
 
 
 @api_view(["GET"])
