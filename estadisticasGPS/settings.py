@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from corsheaders.defaults import default_headers
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = "dev-secret-key"
@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "stats",
+    "corsheaders",
 ]
 
 MIDDLEWARE = [
@@ -25,6 +26,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
 ]
 
 ROOT_URLCONF = "estadisticasGPS.urls"
@@ -73,3 +75,16 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# opcional, pero útil si usas cookies/sesiones
+CORS_ALLOW_CREDENTIALS = True
+
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-user-role",
+]
