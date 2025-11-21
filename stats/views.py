@@ -220,13 +220,11 @@ def global_stats(request):
     rate_qs = Rating.objects.all() if Rating is not None else None
 
     label_id = request.query_params.get("label_id")
-    if label_id:
-        if has_field(Playback, "label_id"):
-            plays_qs = plays_qs.filter(label_id=label_id)
-        if has_field(AlbumSale, "label_id"):
-            sales_qs = sales_qs.filter(label_id=label_id)
-        if rate_qs is not None and has_field(Rating, "label_id"):
-            rate_qs = rate_qs.filter(label_id=label_id)
+    # NOTE: don't filter DB queries by label_id here. Instead we aggregate by artist
+    # and if a label_id filter is requested we will filter the resulting artists
+    # using the artistas metadata fetched from the contenidos service. This allows
+    # attributing plays/ratings to a label when playbacks themselves lack label_id
+    # but the artist is signed to that label.
 
     artists_csv = request.query_params.get("artists")
     if artists_csv:
@@ -462,10 +460,31 @@ def artists_stats(request):
     else:
         items.sort(key=lambda x: x.get("plays", 0), reverse=True)
 
+    # If a label_id filter was requested, fetch artist metadata for all candidate
+    # artists and keep only those whose artist metadata maps to the requested label.
+    if label_id and items:
+        ids_all = ",".join([str(i.get("artist_id")) for i in items if i.get("artist_id")])
+        if ids_all:
+            try:
+                artists_meta_all = _fetch_artists_meta_by_ids(ids_all)
+                filtered = []
+                for it in items:
+                    aid = it.get("artist_id")
+                    meta = artists_meta_all.get(str(aid)) if aid else None
+                    if not meta:
+                        continue
+                    art_label = meta.get("label_id") or (meta.get("label") or {}).get("label_id")
+                    if art_label and str(art_label) == str(label_id):
+                        it["artist"] = meta
+                        filtered.append(it)
+                items = filtered
+            except Exception:
+                items = []
+
     total = len(items)
     page = items[offset : offset + limit]
 
-    # Optional enrichment from contenidos
+    # Optional enrichment from contenidos for the returned page
     if request.query_params.get("enrich") and page:
         ids = ",".join([str(i.get("artist_id")) for i in page if i.get("artist_id")])
         if ids:
@@ -476,7 +495,6 @@ def artists_stats(request):
                     if aid and str(aid) in artists_meta:
                         it["artist"] = artists_meta[str(aid)]
             except Exception:
-                # non-fatal: leave items as-is
                 pass
 
     return Response({"total": total, "limit": limit, "offset": offset, "items": page})
