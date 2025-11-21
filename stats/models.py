@@ -6,6 +6,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 
 class Playback(models.Model):
     song_id = models.CharField(max_length=64, db_index=True)
+    # optional link to record label (UUID/string)
+    label_id = models.CharField(max_length=64, db_index=True, blank=True, null=True)
     seconds = models.PositiveIntegerField(default=0)
     valid = models.BooleanField(default=True)
     played_at = models.DateTimeField(auto_now_add=True)
@@ -20,6 +22,8 @@ class Playback(models.Model):
 
 class AlbumSale(models.Model):
     album_id = models.CharField(max_length=64, db_index=True)
+    # optional link to record label (UUID/string)
+    label_id = models.CharField(max_length=64, db_index=True, blank=True, null=True)
     purchased_at = models.DateTimeField(auto_now_add=True)
     units = models.PositiveIntegerField(default=1)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)

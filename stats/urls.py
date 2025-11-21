@@ -10,6 +10,11 @@ urlpatterns = [
     path("api/v1/stats/albums/<str:album_id>/sales", stats_views.sales_by_album),
     path("api/v1/stats/albums/<str:album_id>/sales/", stats_views.sales_by_album),
 
+    path("api/v1/stats/artists", stats_views.artists_stats),
+    path("api/v1/stats/artists/", stats_views.artists_stats),
+    path("api/v1/stats/artists/ratings", stats_views.artists_ratings),
+    path("api/v1/stats/artists/ratings/", stats_views.artists_ratings),
+
     path("api/v1/stats/global", stats_views.global_stats),
     path("api/v1/stats/global/", stats_views.global_stats),
 
