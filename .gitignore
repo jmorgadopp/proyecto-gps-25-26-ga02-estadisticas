@@ -8,9 +8,6 @@
 .idea
 .DS_Store
 
-# Migrations
-*/migrations
-!*/migrations/0001_initial.py
 
 # Cached files
 */_pycache_
