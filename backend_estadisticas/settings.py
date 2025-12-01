@@ -14,22 +14,27 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    # Stats app: use top-level `stats` package (consolidated)
     "stats",
     "corsheaders",
 ]
 
+MIGRATION_MODULES = {
+    'stats': 'stats.migrations',
+}
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
 ]
 
-ROOT_URLCONF = "estadisticasGPS.urls"
+ROOT_URLCONF = "backend_estadisticas.urls"
 
 TEMPLATES = [
     {
@@ -47,7 +52,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "estadisticasGPS.wsgi.application"
+WSGI_APPLICATION = "backend_estadisticas.wsgi.application"
 
 DATABASES = {
     "default": {
@@ -60,11 +65,9 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
-        # Si tenéis SimpleJWT instalado, podéis añadir:
-        # "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 }
-
 
 AUTH_PASSWORD_VALIDATORS = []
 
@@ -81,10 +84,14 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-# opcional, pero útil si usas cookies/sesiones
 CORS_ALLOW_CREDENTIALS = True
 
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-user-role",
+    "x-dev-user",
+    "authorization",
 ]
+
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True

@@ -8,6 +8,7 @@ coreschema==0.0.4
 Django==5.0.3
 django-cors-headers==4.3.1
 djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
 drf-spectacular==0.27.1
 idna==3.6
 inflection==0.5.1
