@@ -36,6 +36,8 @@ from django.conf import settings
 ID_FIELDS = ("id", "track_id", "song_id", "uuid")
 SEARCH_PARAMS = ("title", "search", "q")
 
+ROUTE_LINK = "http://127.0.0.1:8001/api/v1"
+
 
 def _extract_track_id(item: dict | None) -> str | None:
     if not item:
@@ -101,7 +103,7 @@ def normalize_song_id(song_id: str) -> str:
     content_api = getattr(
         settings,
         "CONTENT_API_BASE",
-        "http://127.0.0.1:8001/api/v1",
+        ROUTE_LINK,
     )
 
     direct_id = _try_fetch_track_by_id(content_api, song_id)
@@ -185,7 +187,7 @@ def artist_aggregate(request, artist_id: str):
         if count:
             return Response({"artist_id": str(artist_id), "ratings_count": count, "ratings_average": (round(float(avg), 4) if avg is not None else None)}, status=200)
 
-        content_api = getattr(settings, "CONTENT_API_BASE", "http://127.0.0.1:8001/api/v1")
+        content_api = getattr(settings, "CONTENT_API_BASE", ROUTE_LINK)
         try:
             r = requests.get(f"{content_api}/artists/{artist_id}/tracks", timeout=5)
             if not r.ok:
@@ -210,7 +212,7 @@ def _fetch_artists_meta_by_ids(ids_csv: str):
     meta = {}
     if not ids_csv:
         return meta
-    content_api = getattr(settings, "CONTENT_API_BASE", "http://127.0.0.1:8001/api/v1")
+    content_api = getattr(settings, "CONTENT_API_BASE", ROUTE_LINK)
     try:
         r = requests.get(f"{content_api}/artists?ids={ids_csv}", timeout=5)
         if r.ok:
@@ -260,7 +262,7 @@ def plays_by_song(request, song_id: str):
 
         if not label and has_field(Playback, "label_id"):
             try:
-                content_api = getattr(settings, "CONTENT_API_BASE", "http://127.0.0.1:8001/api/v1")
+                content_api = getattr(settings, "CONTENT_API_BASE", ROUTE_LINK)
                 url = f"{content_api}/tracks/{song_id}"
                 r = requests.get(url, timeout=2)
                 if r.ok:
@@ -544,7 +546,7 @@ def artists_aggregate(request):
     song_map = {}
     song_ids = [str(r.get("song_id")) for r in unknown_qs if r.get("song_id")]
     if song_ids:
-        content_api = getattr(settings, "CONTENT_API_BASE", "http://127.0.0.1:8001/api/v1")
+        content_api = getattr(settings, "CONTENT_API_BASE", ROUTE_LINK)
         try:
             # Bulk fetch tracks metadata; try `tracks?ids=...` then fall back to per-track
             ids_csv = ",".join(song_ids)
@@ -734,7 +736,7 @@ def artists_ratings(request):
     song_ids = [str(r.get("song_id")) for r in unknown_qs if r.get("song_id")]
     song_map = {}
     if song_ids:
-        content_api = getattr(settings, "CONTENT_API_BASE", "http://127.0.0.1:8001/api/v1")
+        content_api = getattr(settings, "CONTENT_API_BASE", ROUTE_LINK)
         try:
             ids_csv = ",".join(song_ids)
             r = requests.get(f"{content_api}/tracks?ids={ids_csv}", timeout=5)
