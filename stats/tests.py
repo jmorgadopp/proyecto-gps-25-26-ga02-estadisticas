@@ -5,8 +5,8 @@ from django.urls import reverse
 
 class ArtistsRatingsTest(TestCase):
 	def test_artists_ratings_aggregates(self):
-		User = get_user_model()
-		user = User.objects.create(username="tu_test_user", is_superuser=True)
+		_user = get_user_model()
+		user = _user.objects.create(username="tu_test_user", is_superuser=True)
 		# create a rating linked to this user
 		from .models import Rating
 
