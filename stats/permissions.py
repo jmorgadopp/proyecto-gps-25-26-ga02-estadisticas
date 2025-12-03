@@ -1,6 +1,8 @@
 """Shim for permissions — re-export from reorganized backend."""
 from django.conf import settings
 from rest_framework.permissions import BasePermission
+label_name_1 = "discográfica"
+label_name_2 = "discografica"
 
 def _has_label_role(user) -> bool:
 	if not user or not getattr(user, "is_authenticated", False):
@@ -10,13 +12,13 @@ def _has_label_role(user) -> bool:
 	# Por grupo
 	try:
 		names = {g.name.lower() for g in user.groups.all()}
-		if "discografica" in names or "discográfica" in names:
+		if "discografica" in names or "label_name_1" in names:
 			return True
 	except Exception:
 		pass
 	# Por atributo (posible perfil/propiedad custom)
 	role = getattr(user, "role", None) or getattr(getattr(user, "profile", None), "role", None)
-	return (role or "").lower() in {"discografica", "discográfica"}
+	return (role or "").lower() in {label_name_2, label_name_1}
 
 class IsDiscografica(BasePermission):
 	message = "Solo usuarios con rol 'discográfica' pueden acceder."
@@ -28,7 +30,7 @@ class IsDiscografica(BasePermission):
 
 		# 2) Modo DEV: header para pruebas manuales (no usar en prod)
 		hdr = request.headers.get("X-User-Role") or request.META.get("HTTP_X_USER_ROLE")
-		if getattr(settings, "DEBUG", False) and hdr and hdr.lower() in {"discografica", "discográfica"}:
+		if getattr(settings, "DEBUG", False) and hdr and hdr.lower() in {label_name_2, label_name_1}:
 			return True
 
 		# 3) Si hay SimpleJWT configurado, intentamos autenticar
@@ -40,9 +42,9 @@ class IsDiscografica(BasePermission):
 				if _has_label_role(user):
 					return True
 				role = token.payload.get("role") or token.payload.get("roles")
-				if isinstance(role, str) and role.lower() in {"discografica", "discográfica"}:
+				if isinstance(role, str) and role.lower() in {label_name_2, label_name_1}:
 					return True
-				if isinstance(role, (list, tuple, set)) and {"discografica", "discográfica"} & {str(r).lower() for r in role}:
+				if isinstance(role, (list, tuple, set)) and {label_name_2, label_name_1} & {str(r).lower() for r in role}:
 					return True
 		except Exception:
 			pass
