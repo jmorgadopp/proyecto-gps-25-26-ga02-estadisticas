@@ -1,9 +1,25 @@
 from pathlib import Path
 from corsheaders.defaults import default_headers
+from django.core.management.utils import get_random_secret_key
+import os
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = "dev-secret-key"
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
+
+# --- SECRET_KEY sin hardcodear ---
+_env_secret = os.getenv("DJANGO_SECRET_KEY")
+
+# --- SECRET_KEY se encuentra ahora dentro del .env en local ---
+if _env_secret:
+    SECRET_KEY = _env_secret
+else:
+    if DEBUG:
+        # En desarrollo genera una clave aleatoria cada vez
+        SECRET_KEY = get_random_secret_key()
+    else:
+        # En producción obligamos a que exista la variable
+        raise ValueError("DJANGO_SECRET_KEY environment variable not set")
 ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
