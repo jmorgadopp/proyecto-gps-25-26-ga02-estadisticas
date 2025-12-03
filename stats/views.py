@@ -29,41 +29,89 @@ import requests
 from django.conf import settings
 
 
-def normalize_song_id(song_id: str):
-    if not song_id:
-        return song_id
-    content_api = getattr(settings, "CONTENT_API_BASE", "http://127.0.0.1:8001/api/v1")
-    try:
-        r = requests.get(f"{content_api}/tracks/{song_id}", timeout=2)
-        if r.ok:
-            data = r.json()
-            tid = data.get("id") or data.get("track_id") or data.get("song_id") or data.get("uuid")
-            if tid:
-                return str(tid)
-    except Exception:
-        pass
+import requests
+from django.conf import settings
 
-    candidates = []
-    qs = [("title", song_id), ("search", song_id), ("q", song_id)]
-    for param, val in qs:
+
+ID_FIELDS = ("id", "track_id", "song_id", "uuid")
+SEARCH_PARAMS = ("title", "search", "q")
+
+
+def _extract_track_id(item: dict | None) -> str | None:
+    if not item:
+        return None
+
+    for field in ID_FIELDS:
+        value = item.get(field)
+        if value:
+            return str(value)
+
+    return None
+
+
+def _items_from_json(data):
+    if isinstance(data, list):
+        return data
+    return data.get("items") or data.get("results") or []
+
+
+def _try_fetch_track_by_id(base_url: str, song_id: str) -> str | None:
+    try:
+        response = requests.get(f"{base_url}/tracks/{song_id}", timeout=2)
+        if not response.ok:
+            return None
+
+        return _extract_track_id(response.json())
+    except Exception:  # noqa: BLE001 - queremos tragarnos cualquier error aquí
+        return None
+
+
+def _search_track_candidates(base_url: str, song_id: str) -> list[str]:
+    candidates: set[str] = set()
+
+    for param in SEARCH_PARAMS:
         try:
-            r = requests.get(f"{content_api}/tracks", params={param: val}, timeout=3)
-            if not r.ok:
+            response = requests.get(
+                f"{base_url}/tracks",
+                params={param: song_id},
+                timeout=3,
+            )
+            if not response.ok:
                 continue
-            j = r.json()
-            items = j if isinstance(j, list) else (j.get("items") or j.get("results") or [])
+
+            items = _items_from_json(response.json())
             if not items:
                 continue
-            for it in items:
-                if not it:
-                    continue
-                key = it.get("id") or it.get("track_id") or it.get("song_id") or it.get("uuid")
-                if key:
-                    candidates.append(str(key))
-        except Exception:
+
+            for item in items:
+                track_id = _extract_track_id(item)
+                if track_id:
+                    candidates.add(track_id)
+
+        except Exception:  # noqa: BLE001
             continue
-    if len(set(candidates)) == 1:
-        return list(set(candidates))[0]
+
+    return list(candidates)
+
+
+def normalize_song_id(song_id: str) -> str:
+    if not song_id:
+        return song_id
+
+    content_api = getattr(
+        settings,
+        "CONTENT_API_BASE",
+        "http://127.0.0.1:8001/api/v1",
+    )
+
+    direct_id = _try_fetch_track_by_id(content_api, song_id)
+    if direct_id:
+        return direct_id
+
+    candidates = _search_track_candidates(content_api, song_id)
+    if len(candidates) == 1:
+        return candidates[0]
+
     return song_id
 
 
