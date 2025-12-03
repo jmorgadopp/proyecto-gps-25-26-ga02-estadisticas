@@ -122,7 +122,7 @@ try:
 except Exception:
     from .models import Playback as _Playback, AlbumSale as _AlbumSale
     try:
-        from .models import __Rating as _Rating
+        from .models import __rating as _Rating
     except Exception:
         _Rating = None
 
@@ -147,8 +147,8 @@ def has_field(model, name: str) -> bool:
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def rating_by_song(request, song_id: str):
-    __Rating = get_rating_model()
-    if __Rating is None:
+    __rating = get_rating_model()
+    if __rating is None:
         return Response({"song_id": song_id, "count": 0, "average": None}, status=200)
 
     qs = Rating.objects.filter(song_id=song_id)
@@ -160,8 +160,8 @@ def rating_by_song(request, song_id: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def song_aggregate(request, song_id: str):
-    __Rating = get_rating_model()
-    if __Rating is None:
+    __rating = get_rating_model()
+    if __rating is None:
         return Response({"song_id": song_id, "ratings_count": 0, "ratings_average": None}, status=200)
 
     try:
@@ -176,8 +176,8 @@ def song_aggregate(request, song_id: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def artist_aggregate(request, artist_id: str):
-    __Rating = get_rating_model()
-    if __Rating is None:
+    __rating = get_rating_model()
+    if __rating is None:
         return Response({"artist_id": artist_id, "ratings_count": 0, "ratings_average": None}, status=200)
 
     try:
@@ -349,8 +349,8 @@ def sales_by_album(request, album_id: str):
 
 
 def _collect_artist_aggregates(limit: int = None, offset: int = 0, sort: str = "count"):
-    __Rating = get_rating_model()
-    if __Rating is None:
+    __rating = get_rating_model()
+    if __rating is None:
         return 0, []
 
     qs = Rating.objects.values("artist_id").annotate(ratings_count=Count("id"), ratings_average=Avg("stars"))
@@ -418,15 +418,15 @@ class SongRatingsListCreateView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        __Rating = get_rating_model()
+        __rating = get_rating_model()
         song_id = self.kwargs.get("song_id")
-        if __Rating is None:
-            return Rating.objects.none() if __Rating is not None else []
+        if __rating is None:
+            return Rating.objects.none() if __rating is not None else []
         return Rating.objects.filter(song_id=song_id).order_by("-rated_at")
 
     def perform_create(self, serializer):
-        __Rating = get_rating_model()
-        if __Rating is None:
+        __rating = get_rating_model()
+        if __rating is None:
             raise IntegrityError("Rating model not available")
 
         song_id = self.kwargs.get("song_id")
@@ -447,8 +447,8 @@ class RatingDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        __Rating = get_rating_model()
-        if __Rating is None:
+        __rating = get_rating_model()
+        if __rating is None:
             return []
         return Rating.objects.all()
 
@@ -465,13 +465,13 @@ class RatingDetailView(generics.RetrieveUpdateDestroyAPIView):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def global_stats(request):
-    __Rating = get_rating_model()
+    __rating = get_rating_model()
     Playback = get_playback_model()
     AlbumSale = get_album_sale_model()
 
     try:
-        ratings_count = Rating.objects.count() if __Rating is not None else 0
-        ratings_avg = Rating.objects.aggregate(avg=Avg("stars"))["avg"] if __Rating is not None else None
+        ratings_count = Rating.objects.count() if __rating is not None else 0
+        ratings_avg = Rating.objects.aggregate(avg=Avg("stars"))["avg"] if __rating is not None else None
     except Exception:
         ratings_count = 0
         ratings_avg = None
@@ -502,13 +502,13 @@ def artists_aggregate(request):
 
     This endpoint attempts to compute ratings_count and ratings_average per
     artist using DB-side aggregation when the `artist_id` field exists on the
-    __Rating model. For ratings that lack `artist_id`, it will attempt to resolve
+    __rating model. For ratings that lack `artist_id`, it will attempt to resolve
     the track -> artist mapping by calling the contenidos service in bulk and
     include those ratings in the aggregation. The response shape is compatible
     with the frontend expectations: { total, items: [ { artist_id, ratings_count, ratings_average, artist? } ] }
     """
-    __Rating = get_rating_model()
-    if __Rating is None:
+    __rating = get_rating_model()
+    if __rating is None:
         return Response({"detail": "Rating model not available."}, status=400)
 
     qs = Rating.objects.all()
@@ -697,8 +697,8 @@ def artists_ratings(request):
     - `from`, `to` filters applied to `rated_at`
     - `enrich` (1|true) if present will call contenidos to get artist metadata
     """
-    __Rating = get_rating_model()
-    if __Rating is None:
+    __rating = get_rating_model()
+    if __rating is None:
         return Response({"detail": "Rating model not available."}, status=400)
 
     qs = Rating.objects.all()
