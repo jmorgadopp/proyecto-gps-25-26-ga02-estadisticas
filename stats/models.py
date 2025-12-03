@@ -41,7 +41,7 @@ class Rating(models.Model):
 	)
 	# Identificadores funcionales
 	song_id = models.CharField(max_length=64, db_index=True)
-	artist_id = models.CharField(max_length=64, db_index=True, blank=True, null=True)
+	artist_id = models.CharField(max_length=64, db_index=True, blank=True)
 
 	# Puntuación 1..5
 	stars = models.PositiveSmallIntegerField(
